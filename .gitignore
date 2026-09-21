@@ -1,0 +1,10 @@
+# OS / editor noise
+Thumbs.db
+.DS_Store
+*.bak
+*.swp
+.vscode/
+.idea/
+
+# release artifacts
+*.zip
