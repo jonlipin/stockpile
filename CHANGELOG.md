@@ -1,3 +1,11 @@
+# Stockpile 1.0.1
+
+## Faster bank and guild bank transfers
+- Depositing and withdrawing is around five times quicker. A deposit of seven stacks, two of them needing a split, now takes about 1.4 seconds instead of about 7.
+- Every move is still confirmed with the server before the next one is issued, so nothing is fired blindly and the safety checks are unchanged.
+- The speed-up comes from two things: the mover no longer idles for a whole extra tick after each confirmation, and the tick interval dropped from 0.25s to 0.1s.
+- Waiting periods are now measured in seconds rather than ticks, so a slow server still gets the same patience it had before.
+
 # Stockpile 1.0.0: Initial release
 
 For **WoW: Forever** (Interface 16001).

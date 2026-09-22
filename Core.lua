@@ -667,6 +667,12 @@ local function Trace(msg)
 	if ns.db and ns.db.settings.trace then print("|cff888888Stockpile trace:|r " .. msg) end
 end
 
+-- Pace of the mover. A move is never issued until the previous one is confirmed,
+-- so a short interval cannot outrun the server: it only cuts the idle waiting.
+local MOVE_INTERVAL = 0.1   -- seconds between ticks
+local MOVE_WAIT     = 2.0   -- how long to let the server confirm a single move
+local MOVE_TIMEOUT  = 90    -- give up on the whole pass after this long
+
 -- Every move is issued on one tick and VERIFIED on the next by re-reading the
 -- source slot. A refused drop (item bounces back, or stays on the cursor) marks
 -- that container bad for the rest of the pass, so it is never retried blindly.
@@ -675,14 +681,15 @@ local function VerifyPending()
 	local job, from, to = p.job, p.from, p.to
 	local count, locked = from:StateAt(p.loc)
 
+	local now = GetTime and GetTime() or 0
 	if CursorHasItem and CursorHasItem() then
 		-- Pickup worked, drop was refused: put it back where it came from.
-		p.cursorTicks = (p.cursorTicks or 0) + 1
-		if p.cursorTicks == 1 then
+		if not p.returned then
+			p.returned, p.returnedAt = true, now
 			Trace("drop into " .. to:LocText(p.target) .. " refused, returning item to " .. from:LocText(p.loc))
 			from:Drop(p.loc)
 			return
-		elseif p.cursorTicks < 8 then
+		elseif (now - (p.returnedAt or now)) < MOVE_WAIT then
 			return -- give the return-drop a moment
 		end
 		-- Could not even put it back; leave it on the cursor for the player and stop.
@@ -692,8 +699,7 @@ local function VerifyPending()
 		return
 	end
 
-	if locked and (p.lockedTicks or 0) < 8 then
-		p.lockedTicks = (p.lockedTicks or 0) + 1
+	if locked and (now - (p.issuedAt or now)) < MOVE_WAIT then
 		return -- server still processing
 	end
 	mover.pending = nil
@@ -734,8 +740,14 @@ local function MoveStep()
 	local store = mover.store
 	if not store.IsOpen() then FinishMove() return end
 	mover.ticks = mover.ticks + 1
-	if mover.ticks > 300 then FinishMove("restock timed out.") return end
-	if mover.pending then VerifyPending() return end
+	local now = GetTime and GetTime() or 0
+	if mover.startedAt and (now - mover.startedAt) > MOVE_TIMEOUT then FinishMove("restock timed out.") return end
+	if mover.pending then
+		VerifyPending()
+		if not mover or mover.pending then return end
+		-- Confirmed. Carry straight on and issue the next move in this same tick,
+		-- rather than idling for another one.
+	end
 	if CursorHasItem and CursorHasItem() then return end -- player is holding something
 	if not store.Ready() then return end
 
@@ -779,7 +791,7 @@ local function MoveStep()
 			Trace(string.format("%s: splitting %d x %s off %s into %s first", job.dir, n, job.name, from:LocText(stack.loc), from:LocText(spare)))
 			from:Pickup(stack.loc, n, stack.count)
 			from:Drop(spare)
-			mover.pending = { job = job, from = from, to = from, loc = stack.loc, count = stack.count, n = n, target = spare, stage = "split" }
+			mover.pending = { job = job, from = from, to = from, loc = stack.loc, count = stack.count, n = n, target = spare, stage = "split", issuedAt = GetTime and GetTime() or 0 }
 			return
 		end
 		Trace("no empty slot in " .. from.name .. " to split into; splitting directly")
@@ -796,7 +808,7 @@ local function MoveStep()
 	Trace(string.format("%s: %d x %s from %s to %s", job.dir, n, job.name, from:LocText(stack.loc), to:LocText(target)))
 	from:Pickup(stack.loc, n, stack.count)
 	to:Drop(target)
-	mover.pending = { job = job, from = from, to = to, loc = stack.loc, count = stack.count, n = n, target = target }
+	mover.pending = { job = job, from = from, to = to, loc = stack.loc, count = stack.count, n = n, target = target, issuedAt = GetTime and GetTime() or 0 }
 end
 
 -- which = "bank" | "guild"
@@ -831,8 +843,8 @@ function Restocker:RunStorage(which, manual)
 		end
 		return
 	end
-	mover = { store = store, plan = plan, ticks = 0, bad = {} }
-	mover.ticker = C_Timer.NewTicker(0.25, MoveStep)
+	mover = { store = store, plan = plan, ticks = 0, bad = {}, startedAt = GetTime and GetTime() or 0 }
+	mover.ticker = C_Timer.NewTicker(MOVE_INTERVAL, MoveStep)
 end
 
 function Restocker:RunBank(manual) self:RunStorage("bank", manual) end

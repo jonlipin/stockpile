@@ -2,7 +2,7 @@
 ## Title: Stockpile
 ## Notes: Keep your bags topped up from vendors and the bank. Drag items in, set how many you want.|n|cff00ccff/stockpile|r to open.
 ## Author: Jon
-## Version: 1.0.0
+## Version: 1.0.1
 ## LoadSavedVariablesFirst: 1
 ## SavedVariables: StockpileAccountDB
 ## SavedVariablesPerCharacter: StockpileDB
