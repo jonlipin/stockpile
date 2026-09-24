@@ -18,6 +18,7 @@ local GetItemCount             = (C_Item and C_Item.GetItemCount) or GetItemCoun
 local GetItemQualityColor      = (C_Item and C_Item.GetItemQualityColor) or GetItemQualityColor
 local GetContainerNumSlots     = (C_Container and C_Container.GetContainerNumSlots) or GetContainerNumSlots
 local GetContainerNumFreeSlots = (C_Container and C_Container.GetContainerNumFreeSlots) or GetContainerNumFreeSlots
+local GetItemFamily            = (C_Item and C_Item.GetItemFamily) or GetItemFamily
 local PickupContainerItem      = (C_Container and C_Container.PickupContainerItem) or PickupContainerItem
 local SplitContainerItem       = (C_Container and C_Container.SplitContainerItem) or SplitContainerItem
 
@@ -405,6 +406,31 @@ local function ContainerStacks(containers, itemID)
 end
 
 -- `exclude` is a set of container keys (see LocKey) that refused a drop earlier.
+-- A specialised bag (reagent bag, quiver, profession bag) only takes items whose
+-- family shares a bit with the bag's. Done long-hand so it works wherever the bit
+-- library does not.
+local function FamilyAccepts(bagFamily, itemID)
+	if not bagFamily or bagFamily == 0 then return true end          -- general-purpose
+	local itemFamily = GetItemFamily and GetItemFamily(itemID) or 0
+	if not itemFamily or itemFamily == 0 then return false end
+	local a, b = itemFamily, bagFamily
+	while a > 0 and b > 0 do
+		if a % 2 == 1 and b % 2 == 1 then return true end
+		a, b = math.floor(a / 2), math.floor(b / 2)
+	end
+	return false
+end
+
+local function EmptySlotIn(bag, itemID)
+	local free, family = GetContainerNumFreeSlots(bag)
+	if not free or free <= 0 then return nil end
+	if not FamilyAccepts(family, itemID) then return nil end
+	for slot = 1, GetContainerNumSlots(bag) do
+		if not GetSlotInfo(bag, slot) then return slot end
+	end
+	return nil
+end
+
 local function ContainerDropTarget(containers, itemID, n, exclude)
 	local maxStack = MaxStackOf(itemID)
 	for _, bag in ipairs(containers) do
@@ -417,12 +443,16 @@ local function ContainerDropTarget(containers, itemID, n, exclude)
 			end
 		end
 	end
-	for _, bag in ipairs(containers) do
-		if not exclude["bag:" .. bag] then
-			local free, family = GetContainerNumFreeSlots(bag)
-			if free and free > 0 and (family or 0) == 0 then
-				for slot = 1, GetContainerNumSlots(bag) do
-					if not GetSlotInfo(bag, slot) then return { bag = bag, slot = slot } end
+	-- Prefer a general-purpose bag, so a reagent bag is not filled with the only
+	-- slot something else could have used.
+	for pass = 1, 2 do
+		for _, bag in ipairs(containers) do
+			if not exclude["bag:" .. bag] then
+				local _, family = GetContainerNumFreeSlots(bag)
+				local general = (family or 0) == 0
+				if (pass == 1) == general then
+					local slot = EmptySlotIn(bag, itemID)
+					if slot then return { bag = bag, slot = slot } end
 				end
 			end
 		end
@@ -439,17 +469,14 @@ local function MakeContainerStore(name, listContainers)
 		end,
 		FindDropTarget = function(_, itemID, n, exclude) return ContainerDropTarget(listContainers(), itemID, n, exclude) end,
 		Drop = function(_, loc) PickupContainerItem(loc.bag, loc.slot) end,
-		-- An empty slot in the same store, preferring the same bag as `near`.
-		FindEmptySlotNear = function(_, near)
+		-- An empty slot in the same store, preferring the same bag as `near`. The item
+		-- matters: a split of a reagent can land in the reagent bag, anything else cannot.
+		FindEmptySlotNear = function(_, near, itemID)
 			local order = { near.bag }
 			for _, bag in ipairs(listContainers()) do if bag ~= near.bag then order[#order + 1] = bag end end
 			for _, bag in ipairs(order) do
-				local free, family = GetContainerNumFreeSlots(bag)
-				if free and free > 0 and (family or 0) == 0 then
-					for slot = 1, GetContainerNumSlots(bag) do
-						if not GetSlotInfo(bag, slot) then return { bag = bag, slot = slot } end
-					end
-				end
+				local slot = EmptySlotIn(bag, itemID)
+				if slot then return { bag = bag, slot = slot } end
 			end
 			return nil
 		end,
@@ -465,11 +492,20 @@ local function MakeContainerStore(name, listContainers)
 	}
 end
 
+-- The bags the player carries: backpack, the normal bag slots, and the reagent bag,
+-- which sits in its own slot after the last normal one. Only trust the enum for the
+-- reagent bag: guessing an id would risk picking up a bank container, which is the
+-- very next number along on this client.
 local function BagContainers()
 	local list = {}
 	for bag = 0, (NUM_BAG_SLOTS or 4) do list[#list + 1] = bag end
+	local reagent = Enum and Enum.BagIndex and Enum.BagIndex.ReagentBag
+	if reagent and reagent ~= (Enum.BagIndex.Bank or -1) and (GetContainerNumSlots(reagent) or 0) > 0 then
+		list[#list + 1] = reagent
+	end
 	return list
 end
+ns.BagContainers = BagContainers
 
 -- Bank storage container ids. Two layouts exist:
 --  * retail-style tabs: Enum.BagIndex.CharacterBankTab_1..6. When any of these has
@@ -786,7 +822,7 @@ local function MoveStep()
 	-- ("Couldn't split those items"), so split inside the source first and move
 	-- the resulting stack whole on the next pass.
 	if n < stack.count and not job.noSplit then
-		local spare = from:FindEmptySlotNear(stack.loc)
+		local spare = from:FindEmptySlotNear(stack.loc, job.itemID)
 		if spare then
 			Trace(string.format("%s: splitting %d x %s off %s into %s first", job.dir, n, job.name, from:LocText(stack.loc), from:LocText(spare)))
 			from:Pickup(stack.loc, n, stack.count)
@@ -955,6 +991,16 @@ SlashCmdList.STOCKPILE = function(msg)
 			.. " PickupGuildBankItem=" .. tostring(PickupGuildBankItem ~= nil)
 			.. " SplitGuildBankItem=" .. tostring(SplitGuildBankItem ~= nil)
 			.. " GetCurrentGuildBankTab=" .. tostring(GetCurrentGuildBankTab ~= nil))
+		local carried = BagContainers()
+		print("   carried bags: " .. table.concat(carried, ",")
+			.. "   (Enum.BagIndex.ReagentBag=" .. tostring(Enum and Enum.BagIndex and Enum.BagIndex.ReagentBag)
+			.. ", GetItemFamily=" .. tostring(GetItemFamily ~= nil) .. ")")
+		for _, bag in ipairs(carried) do
+			local free, family = GetContainerNumFreeSlots(bag)
+			local used = 0
+			for slot = 1, GetContainerNumSlots(bag) do if GetSlotInfo(bag, slot) then used = used + 1 end end
+			print(string.format("     bag %d: slots=%d free=%s family=%s used=%d", bag, GetContainerNumSlots(bag) or 0, tostring(free), tostring(family), used))
+		end
 		local bags = BankContainers()
 		print("   bank containers: " .. (#bags > 0 and table.concat(bags, ",") or "(none - bank closed)"))
 		for _, bag in ipairs(bags) do
