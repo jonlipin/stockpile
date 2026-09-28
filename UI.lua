@@ -375,9 +375,14 @@ emptyText:SetText("Drag an item from your bags here,\nor type its item ID above.
 -- ---- Rows ---------------------------------------------------------
 local rows = {}
 
+-- Kept together so the numeric ceiling and the typed-character limit cannot drift
+-- apart: raising WANT_MAX is useless if the box will not accept its digits.
+local WANT_MAX = 9999
+local WANT_DIGITS = #tostring(WANT_MAX)
+
 local function CommitWant(row, value)
 	if not row.cfg then return end
-	value = math.max(0, math.floor(tonumber(value) or row.cfg.want))
+	value = math.max(0, math.min(WANT_MAX, math.floor(tonumber(value) or row.cfg.want)))
 	if value ~= row.cfg.want then
 		row.cfg.want = value
 		Restocker:RequestRefresh()
@@ -392,7 +397,11 @@ local function CreateWantInput(row)
 	input:SetAutoFocus(false)
 	if tmpl == "NumericInputSpinnerTemplate" then
 		input:SetSize(40, 20)
-		input:SetMinMaxValues(0, 9999)
+		input:SetMinMaxValues(0, WANT_MAX)
+		-- NumericInputSpinnerTemplate declares letters="3" in its own XML, so without
+		-- this the box stops at 999 no matter how high the numeric maximum goes, and
+		-- a Want of 1000 or more cannot be typed or stepped up to.
+		input:SetMaxLetters(WANT_DIGITS)
 		-- The spinner fires its value callback for ANY text change - row recycling,
 		-- refreshes, even the UI clearing boxes at logout - and not always synchronously,
 		-- which once overwrote saved Wants. So a value is only committed while the player
@@ -431,7 +440,7 @@ local function CreateWantInput(row)
 	else
 		input:SetSize(50, 20)
 		input:SetNumeric(true)
-		input:SetMaxLetters(4)
+		input:SetMaxLetters(WANT_DIGITS)
 		input:SetJustifyH("CENTER")
 		-- Same rule as the spinner: only commit what the player typed, into the item they were editing.
 		input:SetScript("OnEditFocusGained", function() row.editCfg = row.cfg end)
