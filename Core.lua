@@ -95,73 +95,9 @@ end
 -- Bank-type sources are where Extras can be deposited.
 function ns.HasStorageSource(cfg) return cfg.bank or cfg.guild end
 
--- ------------------------------------------------------------------
--- Account-wide mirror.
--- The per-character save once came back empty after a cold client start even
--- though a valid file was on disk. So every character's list is mirrored into
--- an account-wide saved variable (a different file in a different folder), and
--- each load is journalled so a repeat can be diagnosed from /stockpile debug.
--- ------------------------------------------------------------------
-local function CharKey()
-	local name = UnitName and UnitName("player") or "?"
-	-- GetNormalizedRealmName() is nil early in login, so it yields a different key
-	-- at different times; GetRealmName() is stable.
-	local realm = (GetRealmName and GetRealmName()) or "?"
-	return tostring(name) .. "-" .. tostring(realm)
-end
-
-local function CopyItems(items)
-	local out = {}
-	for id, cfg in pairs(items) do
-		if type(cfg) == "table" then
-			local c = {}
-			for k, v in pairs(cfg) do c[k] = v end
-			out[id] = c
-		end
-	end
-	return out
-end
-
-local function CountItems(items)
-	local n = 0
-	for _ in pairs(items or {}) do n = n + 1 end
-	return n
-end
-
--- Called after every deliberate change to the list and at logout, so the mirror
--- always reflects what the player meant - including a deliberately emptied list.
-function ns.SyncMirror()
-	if not ns.db then return end
-	local stamp = time and time() or 0
-	if StockpileAccountDB and StockpileAccountDB.chars then
-		StockpileAccountDB.chars[CharKey()] = { items = CopyItems(ns.db.items), savedAt = stamp }
-	end
-end
-
-
-local function InitDB(when)
-	local fresh = (StockpileDB == nil)
-	StockpileAccountDB = StockpileAccountDB or {}
-	StockpileAccountDB.chars = StockpileAccountDB.chars or {}
-	StockpileAccountDB.journal = StockpileAccountDB.journal or {}
-
+local function InitDB()
 	StockpileDB = StockpileDB or {}
 	StockpileDB.items = StockpileDB.items or {}
-
-	-- A brand-new per-character table while the mirror remembers a list for this
-	-- character means the character save did not load: put the list back.
-	local key = CharKey()
-	local mirror = StockpileAccountDB.chars[key]
-	local restored = 0
-	if fresh and mirror and CountItems(mirror.items) > 0 then
-		StockpileDB.items = CopyItems(mirror.items)
-		restored = CountItems(StockpileDB.items)
-		ns.restoredFromMirror = restored
-	end
-	local journal = StockpileAccountDB.journal
-	journal[#journal + 1] = string.format("%s %s @%s fresh=%s items=%d restored=%d",
-		date and date("%m-%d %H:%M:%S") or "?", key, tostring(when or "?"), tostring(fresh), CountItems(StockpileDB.items), restored)
-	while #journal > 12 do table.remove(journal, 1) end
 
 	StockpileDB.settings = StockpileDB.settings or {}
 	for k, v in pairs(DEFAULT_SETTINGS) do
@@ -188,13 +124,6 @@ local function InitDB(when)
 		end
 	end
 	ns.db = StockpileDB
-	ns.dbFresh = fresh and restored == 0
-	ns.SyncMirror()
-	if restored > 0 then
-		C_Timer.After(4, function()
-			Print(string.format("|cffffd100your character save did not load, so I restored %d item%s from the account backup.|r Run /stockpile debug if this keeps happening.", restored, restored == 1 and "" or "s"))
-		end)
-	end
 end
 
 -- ------------------------------------------------------------------
@@ -258,14 +187,12 @@ function Restocker:AddItem(itemID)
 		deposit = false,
 	}
 	ns.RequestItemLoad(itemID)
-	ns.SyncMirror()
 	self:RequestRefresh()
 	return true
 end
 
 function Restocker:RemoveItem(itemID)
 	ns.db.items[itemID] = nil
-	ns.SyncMirror()
 	self:RequestRefresh()
 end
 
@@ -918,7 +845,7 @@ SafeRegister("PLAYER_LOGIN")
 Restocker:SetScript("OnEvent", function(self, event, arg1)
 	if event == "ADDON_LOADED" then
 		if arg1 == ADDON then
-			InitDB("ADDON_LOADED")
+			InitDB()
 			if ns.UI then ns.UI:OnDBReady() end
 			self:UnregisterEvent("ADDON_LOADED")
 		end
@@ -926,11 +853,9 @@ Restocker:SetScript("OnEvent", function(self, event, arg1)
 		-- If saved variables arrived after ADDON_LOADED, the game replaced the globals
 		-- and ns.db points at an orphan. Adopt the real tables.
 		if ns.db ~= StockpileDB or not ns.db then
-			InitDB("PLAYER_LOGIN(late)")
+			InitDB()
 			if ns.UI then ns.UI:OnDBReady() end
 		end
-	elseif event == "PLAYER_LOGOUT" then
-		ns.SyncMirror()
 	elseif event == "MERCHANT_SHOW" then
 		self.merchantOpen = true
 		if ns.UI then ns.UI:OnMerchantShow() end
@@ -984,8 +909,6 @@ SlashCmdList.STOCKPILE = function(msg)
 			.. " ItemMixin=" .. tostring(Item ~= nil and Item.CreateFromItemID ~= nil)
 			.. " GetMerchantItemMaxStack=" .. tostring(GetMerchantItemMaxStack ~= nil)
 			.. " C_MerchantFrame=" .. tostring(C_MerchantFrame ~= nil and C_MerchantFrame.GetItemInfo ~= nil))
-		print("   save journal (newest last):")
-		for _, line in ipairs((StockpileAccountDB and StockpileAccountDB.journal) or {}) do print("     " .. line) end
 		print("   guild API: GetNumGuildBankTabs=" .. tostring(GetNumGuildBankTabs ~= nil)
 			.. " GetGuildBankItemInfo=" .. tostring(GetGuildBankItemInfo ~= nil)
 			.. " PickupGuildBankItem=" .. tostring(PickupGuildBankItem ~= nil)
