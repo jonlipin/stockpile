@@ -9,7 +9,9 @@ ns.UI = UI
 ns.templateReport = {}
 
 local ROW_HEIGHT = 24
-local FRAME_W, FRAME_H = 820, 520
+-- Columns are anchored to the right edge, so extra width only grows the Item column,
+-- which is also what gives the footer room for its last toggle.
+local FRAME_W, FRAME_H = 900, 520
 local ICON = "Interface\\Icons\\INV_Misc_Bag_10"
 
 -- Column x offsets measured from the RIGHT edge of a row, plus widths.
@@ -672,14 +674,16 @@ local function CreateToggle(anchor, x, label, settingKey, tooltip)
 end
 
 local toggles = {}
-toggles[1] = CreateToggle(countText, 24, "Auto vendor", "autoVendor", "Buy automatically whenever you open a merchant.")
-toggles[2] = CreateToggle(toggles[1].label, 12, "Auto bank", "autoBank", "Move items automatically whenever you open your bank.")
-toggles[3] = CreateToggle(toggles[2].label, 12, "Auto guild", "autoGuild", "Move items automatically whenever you open the guild bank.")
-toggles[4] = CreateToggle(toggles[3].label, 12, "Chat", "announce", "Print a summary in chat after restocking.")
+toggles[1] = CreateToggle(countText, 24, "Auto vendor", "autoVendor", "Buy automatically whenever you open a merchant.\nHold shift as it opens to skip that one visit.")
+toggles[2] = CreateToggle(toggles[1].label, 12, "Auto bank", "autoBank", "Move items automatically whenever you open your bank.\nHold shift as it opens to skip that one visit.")
+toggles[3] = CreateToggle(toggles[2].label, 12, "Auto guild", "autoGuild", "Move items automatically whenever you open the guild bank.\nHold shift as it opens to skip that one visit.")
+toggles[4] = CreateToggle(toggles[3].label, 12, "Shift skips", "shiftSkips",
+	"Hold shift as a vendor, bank or guild bank opens and Stockpile leaves it alone for that visit.\nThe Restock button and /stockpile vendor, bank or guild still work.")
+toggles[5] = CreateToggle(toggles[4].label, 12, "Chat", "announce", "Print a summary in chat after restocking.")
 
 -- Gold reserve: "never spend below this much at vendors".
 local RESERVE_TIP = "When ticked, vendor buying never takes you below this amount.\nIf you already have less, nothing is bought at all.\nBank and guild bank moves are not affected."
-toggles[5] = CreateToggle(toggles[4].label, 12, "Keep", "reserveEnabled", RESERVE_TIP)
+toggles[6] = CreateToggle(toggles[5].label, 12, "Keep", "reserveEnabled", RESERVE_TIP)
 
 local function CreateCoinBox(anchor, x, width, maxLetters, iconFile, tipTitle)
 	local box = CreateFrame("EditBox", nil, footer, "InputBoxTemplate")
@@ -703,7 +707,7 @@ local function CreateCoinBox(anchor, x, width, maxLetters, iconFile, tipTitle)
 	return box
 end
 -- x offsets include the 5px the left cap sticks out, so the gaps look even.
-local reserveGold   = CreateCoinBox(toggles[5].label, 12, 48, 6, "Interface\\MoneyFrame\\UI-GoldIcon", "Gold to keep")
+local reserveGold   = CreateCoinBox(toggles[6].label, 12, 48, 6, "Interface\\MoneyFrame\\UI-GoldIcon", "Gold to keep")
 local reserveSilver = CreateCoinBox(reserveGold.coin, 12, 30, 2, "Interface\\MoneyFrame\\UI-SilverIcon", "Silver to keep")
 
 local function CommitReserve()
@@ -733,7 +737,7 @@ for _, box in ipairs({ reserveGold, reserveSilver }) do
 	box:SetScript("OnEscapePressed", function(self) self.discard = true self:ClearFocus() end)
 	box:SetScript("OnTabPressed", function(self) CommitReserve() if self == reserveGold then reserveSilver:SetFocus() else reserveGold:SetFocus() end end)
 end
-toggles[5]:HookScript("OnClick", function() ShowReserve() end)
+toggles[6]:HookScript("OnClick", function() ShowReserve() end)
 
 local nowButton = CreateFrame("Button", nil, footer, "UIPanelButtonTemplate")
 nowButton:SetSize(110, 22)

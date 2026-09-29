@@ -66,6 +66,7 @@ local DEFAULT_SETTINGS = {
 	autoVendor = true,
 	autoBank = true,
 	autoGuild = true,
+	shiftSkips = true,
 	reserveEnabled = false,
 	reserveCopper = 0,
 	sortKey = "name",
@@ -213,6 +214,16 @@ end
 Restocker.merchantOpen = false
 Restocker.bankOpen = false
 Restocker.guildOpen = false
+
+-- Holding shift as a vendor, bank or guild bank opens skips that automatic pass.
+-- Read at the moment the window opens: the passes are delayed by up to a second and
+-- the key is long released by the time they run.
+local function AutoSkipped(what)
+	if not ns.db.settings.shiftSkips then return false end
+	if not (IsShiftKeyDown and IsShiftKeyDown()) then return false end
+	Announce("shift held, so " .. what .. " was left alone. Use the Restock button or /stockpile " .. what .. " to run it.")
+	return true
+end
 
 function Restocker:RunVendor(manual)
 	if not self.merchantOpen then
@@ -859,7 +870,7 @@ Restocker:SetScript("OnEvent", function(self, event, arg1)
 	elseif event == "MERCHANT_SHOW" then
 		self.merchantOpen = true
 		if ns.UI then ns.UI:OnMerchantShow() end
-		if ns.db.settings.autoVendor then C_Timer.After(0.1, function() self:RunVendor(false) end) end
+		if ns.db.settings.autoVendor and not AutoSkipped("vendor") then C_Timer.After(0.1, function() self:RunVendor(false) end) end
 		self:RequestRefresh()
 	elseif event == "MERCHANT_CLOSED" then
 		self.merchantOpen = false
@@ -868,7 +879,7 @@ Restocker:SetScript("OnEvent", function(self, event, arg1)
 		self.bankOpen = true
 		ns.RefreshBankSnapshot()
 		if ns.UI then ns.UI:OnBankShow() end
-		if ns.db.settings.autoBank then C_Timer.After(0.2, function() self:RunBank(false) end) end
+		if ns.db.settings.autoBank and not AutoSkipped("bank") then C_Timer.After(0.2, function() self:RunBank(false) end) end
 		self:RequestRefresh()
 	elseif event == "BANKFRAME_CLOSED" then
 		self.bankOpen = false
@@ -880,7 +891,7 @@ Restocker:SetScript("OnEvent", function(self, event, arg1)
 		guildQueried = {}
 		ns.QueryGuildTabs()
 		if ns.UI then ns.UI:OnGuildBankShow() end
-		if ns.db.settings.autoGuild then C_Timer.After(1.2, function() self:RunGuild(false) end) end
+		if ns.db.settings.autoGuild and not AutoSkipped("guild") then C_Timer.After(1.2, function() self:RunGuild(false) end) end
 		self:RequestRefresh()
 	elseif event == "GUILDBANKFRAME_CLOSED" then
 		self.guildOpen = false
