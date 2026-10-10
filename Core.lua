@@ -73,6 +73,8 @@ local DEFAULT_SETTINGS = {
 	sortAsc = true,
 	minimapAngle = 220,
 	minimapHide = false,
+	style = "auto",     -- window style: auto (EllesmereUI's look when it runs), blizzard or dark
+	darkAlpha = 0.92,   -- background opacity of the Dark style
 }
 
 -- Per-item sources are independent flags: cfg.vendor, cfg.bank, cfg.guild.
@@ -912,6 +914,10 @@ SlashCmdList.STOCKPILE = function(msg)
 	msg = (msg or ""):lower():match("^%s*(.-)%s*$")
 	if msg == "debug" then
 		Print("UI template report:")
+		if ns.Styles then
+			print("   window style: " .. ns.Styles.Name(ns.db.settings.style) .. " chosen, Dark opacity " .. tostring(ns.db.settings.darkAlpha)
+				.. " (the skin line below says what is drawn)")
+		end
 		local keys = {}
 		for k in pairs(ns.templateReport or {}) do keys[#keys + 1] = k end
 		table.sort(keys)
@@ -985,6 +991,16 @@ SlashCmdList.STOCKPILE = function(msg)
 				end
 			end
 		end
+	elseif msg == "style" or msg:sub(1, 6) == "style " then
+		local Styles = ns.Styles
+		if not Styles then return end
+		local arg = msg:sub(7):match("^%s*(.-)%s*$")
+		if arg == "auto" or arg == "automatic" then Styles.Set("auto")
+		elseif arg == "blizzard" or arg == "dark" then Styles.Set(arg)
+		elseif arg == "" then Styles.Cycle(1)
+		else Print("Styles: auto, blizzard, dark.") return end
+		Print("Window style: " .. Styles.Name(ns.db.settings.style) .. ". " .. Styles.Note())
+		if ns.UI and ns.UI.ShowLook then ns.UI:ShowLook() end
 	elseif msg == "minimap" then
 		ns.db.settings.minimapHide = not ns.db.settings.minimapHide
 		if ns.UI then ns.UI:UpdateMinimapButton() end
@@ -1001,6 +1017,7 @@ SlashCmdList.STOCKPILE = function(msg)
 		Print("/stockpile - toggle the window")
 		print("   /stockpile vendor | bank | guild - restock now (with that window open)")
 		print("   /stockpile minimap - show/hide the minimap button")
+		print("   /stockpile style [auto | blizzard | dark] - the window style (no word: the next one)")
 		print("   /stockpile debug - print which UI pieces resolved on this client")
 		print("   /stockpile trace - toggle printing every bank/guild move (for troubleshooting)")
 	else

@@ -55,6 +55,13 @@ local function HasAtlas(atlas)
 	return C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(atlas) ~= nil
 end
 
+-- The game's close X calls HideUIPanel, which the game refuses for an addon in combat, so the X
+-- would do nothing then. These windows are not UI panels: their X just hides them, in combat too.
+local function CloseByHiding(window, button)
+	if type(button) ~= "table" or not button.SetScript then return end
+	button:SetScript("OnClick", function() window:Hide() end)
+end
+
 local function SetRowHighlight(tex)
 	for _, atlas in ipairs({ "auctionhouse-ui-row-highlight", "search-highlight" }) do
 		if HasAtlas(atlas) then
@@ -69,7 +76,7 @@ local function SetRowHighlight(tex)
 	tex:SetBlendMode("ADD")
 end
 
--- AH row icons wear a quality-coloured border; use the same atlases when present.
+-- AH row icons wear a quality-colored border; use the same atlases when present.
 local ICON_BORDER_ATLAS = {
 	[0] = "auctionhouse-itemicon-border-gray",   [1] = "auctionhouse-itemicon-border-white",
 	[2] = "auctionhouse-itemicon-border-green",  [3] = "auctionhouse-itemicon-border-blue",
@@ -177,7 +184,9 @@ if not frameTemplate or frameTemplate == "BackdropTemplate" then
 	end
 	local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
 	close:SetPoint("TOPRIGHT", -4, -4)
+	frame.CloseButton = close
 end
+CloseByHiding(frame, frame.CloseButton)
 
 -- Body: the area inside the inset that holds toolbar, header and list.
 local body = CreateFrame("Frame", nil, frame)
@@ -239,8 +248,8 @@ addBox:SetScript("OnEnterPressed", AddFromBox)
 addBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
 -- ---- Column header ------------------------------------------------
--- Styled after the auction house browse list: raised tab-like header buttons
--- (the WhoFrame column-tab art), label left-aligned, sort arrow right after it.
+-- Plain headers: a label left-aligned with the sort arrow right after it, on the list's own
+-- background with no tab art and no highlight (the user chose this look). Click to sort.
 local HEADER_H = 22
 local header = CreateFrame("Frame", nil, body)
 header:SetHeight(HEADER_H)
@@ -248,31 +257,6 @@ local headerY = hasBand and -3 or -38
 header:SetPoint("TOPLEFT", body, "TOPLEFT", 6, headerY)
 header:SetPoint("TOPRIGHT", body, "TOPRIGHT", -28, headerY)
 EnableDrop(header)
-
-local COLUMN_TABS = "Interface\FriendsFrame\WhoFrame-ColumnTabs"
-local function SkinHeaderButton(b)
-	b.left = b:CreateTexture(nil, "BACKGROUND")
-	b.left:SetTexture(COLUMN_TABS)
-	b.left:SetTexCoord(0, 0.078125, 0, 0.75)
-	b.left:SetSize(5, HEADER_H)
-	b.left:SetPoint("TOPLEFT")
-	b.right = b:CreateTexture(nil, "BACKGROUND")
-	b.right:SetTexture(COLUMN_TABS)
-	b.right:SetTexCoord(0.90625, 0.96875, 0, 0.75)
-	b.right:SetSize(4, HEADER_H)
-	b.right:SetPoint("TOPRIGHT")
-	b.middle = b:CreateTexture(nil, "BACKGROUND")
-	b.middle:SetTexture(COLUMN_TABS)
-	b.middle:SetTexCoord(0.078125, 0.90625, 0, 0.75)
-	b.middle:SetPoint("TOPLEFT", b.left, "TOPRIGHT")
-	b.middle:SetPoint("BOTTOMRIGHT", b.right, "BOTTOMLEFT")
-	local hl = b:CreateTexture(nil, "HIGHLIGHT")
-	hl:SetTexture("Interface\PaperDollInfoFrame\UI-Character-Tab-Highlight")
-	hl:SetBlendMode("ADD")
-	hl:SetPoint("TOPLEFT", 2, -2)
-	hl:SetPoint("BOTTOMRIGHT", -2, 2)
-	hl:SetAlpha(0.5)
-end
 
 local function SetSortArrow(tex)
 	if HasAtlas("auctionhouse-ui-sortarrow") then
@@ -282,7 +266,7 @@ local function SetSortArrow(tex)
 		return true
 	end
 	ns.templateReport["atlas:auctionhouse-ui-sortarrow"] = "missing"
-	tex:SetTexture("Interface\Buttons\UI-SortArrow")
+	tex:SetTexture("Interface\\Buttons\\UI-SortArrow")
 	tex:SetSize(9, 8)
 	return false
 end
@@ -291,7 +275,6 @@ local headerButtons = {}
 local function CreateHeaderButton(key, title)
 	local b = CreateFrame("Button", nil, header)
 	b:SetHeight(HEADER_H)
-	SkinHeaderButton(b)
 	b.text = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	b.text:SetPoint("LEFT", 8, 0)
 	b.text:SetJustifyH("LEFT")
@@ -497,7 +480,7 @@ local function CreateRow(index)
 	row.check:SetScript("OnEnter", function(self) ShowTextTooltip(self, "Enabled", "Untick to keep the item on the list without restocking it.") end)
 	row.check:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-	-- The AH frames each row icon in a quality-coloured border whose art is a ROUNDED
+	-- The AH frames each row icon in a quality-colored border whose art is a ROUNDED
 	-- frame with a transparent margin. So the border is the fixed 20x20 box, the icon
 	-- sits well inside it, and a round mask clips the icon's corners so they can never
 	-- poke out past the frame, whatever the exact proportions of the art.
@@ -506,17 +489,22 @@ local function CreateRow(index)
 	row.iconBorder:SetPoint("LEFT", row, "LEFT", 28, 0)
 	row.iconBorder:Hide()
 
+	-- The icon and its mask are both placed on the row itself, at the border's center, rather than
+	-- on the (at first hidden) border or on each other, and the masked icon is not cropped: this
+	-- client rejects SetTexCoord on a texture once it has a mask, so a crop and a mask don't mix.
+	-- The bevel the crop used to cut away lies under the border's ring anyway.
+	local ICON_X = 28 + 10 -- the border's center, from the row's left edge
 	row.icon = row:CreateTexture(nil, "ARTWORK")
 	row.icon:SetSize(14, 14)
-	row.icon:SetPoint("CENTER", row.iconBorder, "CENTER", 0, 0)
-	row.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+	row.icon:SetPoint("CENTER", row, "LEFT", ICON_X, 0)
 	if row.CreateMaskTexture then
 		local ok = pcall(function()
 			local mask = row:CreateMaskTexture()
 			mask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-			mask:SetPoint("TOPLEFT", row.icon, "TOPLEFT", -1, 1)
-			mask:SetPoint("BOTTOMRIGHT", row.icon, "BOTTOMRIGHT", 1, -1)
+			mask:SetSize(16, 16)
+			mask:SetPoint("CENTER", row, "LEFT", ICON_X, 0)
 			row.icon:AddMaskTexture(mask)
+			row.iconMask = mask
 		end)
 		ns.templateReport["icon mask"] = ok and "ok" or "failed"
 	else
@@ -615,6 +603,8 @@ local function CreateRow(index)
 			ChatEdit_InsertLink(self.link)
 		end
 	end)
+	-- Rows are made as the list grows, so each one is restyled as it is made.
+	if ns.SkinRow then ns.SkinRow(row) end
 	return row
 end
 
@@ -693,7 +683,7 @@ local function CreateCoinBox(anchor, x, width, maxLetters, iconFile, tipTitle)
 	box:SetNumeric(true)
 	box:SetMaxLetters(maxLetters)
 	-- InputBoxTemplate draws its left cap 5px OUTSIDE the frame and its right cap inside,
-	-- so the visible box is [-5, width]. Centre the text and inset the right side by the
+	-- so the visible box is [-5, width]. Center the text and inset the right side by the
 	-- same 5px so the digits sit in the middle of what the player actually sees.
 	box:SetJustifyH("CENTER")
 	box:SetTextInsets(0, 5, 0, 0)
@@ -749,6 +739,151 @@ nowButton:SetScript("OnEnter", function(self)
 end)
 nowButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+-- ---- Look ---------------------------------------------------------
+-- The footer has no room left, so the window style lives in a small panel opened by the Look
+-- button at the right end of the toolbar: the style, a line saying what is in use, and the
+-- Dark style's background opacity. Styles.lua (loaded after this file) does the work.
+local lookButton = CreateFrame("Button", nil, toolbarParent, "UIPanelButtonTemplate")
+lookButton:SetSize(64, 22)
+if hasBand then
+	lookButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -14, -32)
+else
+	lookButton:SetPoint("TOPRIGHT", body, "TOPRIGHT", -30, -8)
+end
+lookButton:SetText("Look")
+
+local look = TryCreateFrame("Frame", "StockpileLookPanel", frame, {
+	{ "DefaultPanelFlatTemplate", function(f) return f.NineSlice ~= nil end },
+	{ "BackdropTemplate" },
+})
+look:SetSize(300, 150)
+look:SetPoint("TOPRIGHT", lookButton, "BOTTOMRIGHT", 4, -4)
+look:SetFrameStrata("DIALOG")
+look:EnableMouse(true)
+look:Hide()
+if not look.NineSlice and look.SetBackdrop then
+	look:SetBackdrop({
+		bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+		edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+		tile = true, tileSize = 16, edgeSize = 14,
+		insets = { left = 3, right = 3, top = 3, bottom = 3 },
+	})
+end
+SetFrameTitle(look, "Look")
+look.close = CreateFrame("Button", nil, look, "UIPanelCloseButton")
+look.close:SetPoint("TOPRIGHT", look, "TOPRIGHT", 1, 1)
+CloseByHiding(look, look.close)
+
+look.styleButton = CreateFrame("Button", nil, look, "UIPanelButtonTemplate")
+look.styleButton:SetSize(200, 22)
+look.styleButton:SetPoint("TOPLEFT", look, "TOPLEFT", 16, -34)
+look.styleButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+
+look.note = look:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+look.note:SetPoint("TOPLEFT", look.styleButton, "BOTTOMLEFT", 2, -6)
+look.note:SetPoint("RIGHT", look, "RIGHT", -14, 0)
+look.note:SetHeight(24)
+look.note:SetJustifyH("LEFT")
+look.note:SetJustifyV("TOP")
+
+look.opacityLabel = look:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+look.opacityLabel:SetPoint("TOPLEFT", look.note, "BOTTOMLEFT", 0, -8)
+look.opacityLabel:SetText("Dark background opacity")
+
+local opacity, opacityTemplate = TryCreateFrame("Slider", "StockpileLookOpacity", look, {
+	{ "MinimalSliderTemplate" },
+	{ "UISliderTemplate" },
+	{ "OptionsSliderTemplate" },
+})
+look.opacity = opacity
+opacity:SetOrientation("HORIZONTAL")
+opacity:SetSize(200, 16)
+opacity:SetPoint("TOPLEFT", look.opacityLabel, "BOTTOMLEFT", 0, -6)
+opacity:SetMinMaxValues(0, 100)
+opacity:SetValueStep(5)
+if opacity.SetObeyStepOnDrag then opacity:SetObeyStepOnDrag(true) end
+for _, key in ipairs({ "Low", "High", "Text" }) do
+	if type(opacity[key]) == "table" and opacity[key].SetText then opacity[key]:SetText("") end
+end
+if not opacityTemplate then
+	local track = opacity:CreateTexture(nil, "BACKGROUND")
+	track:SetPoint("LEFT")
+	track:SetPoint("RIGHT")
+	track:SetHeight(6)
+	track:SetColorTexture(0, 0, 0, 0.6)
+	local thumb = opacity:CreateTexture(nil, "OVERLAY")
+	thumb:SetSize(10, 16)
+	thumb:SetColorTexture(1, 0.82, 0, 1)
+	opacity:SetThumbTexture(thumb)
+end
+look.opacityValue = look:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+look.opacityValue:SetPoint("LEFT", opacity, "RIGHT", 10, 0)
+
+-- What the panel shows, from the settings: called when it opens and after every change.
+function UI:ShowLook()
+	local Styles = ns.Styles
+	if not (Styles and ns.db) then return end
+	local s = ns.db.settings
+	look.styleButton:SetText("Window style: " .. Styles.Name(s.style))
+	look.note:SetText(Styles.Note())
+	-- The opacity only means something for Dark, so it is grayed for the other styles.
+	local dark = s.style == "dark"
+	opacity:SetEnabled(dark)
+	opacity:SetAlpha(dark and 1 or 0.5)
+	look.opacityLabel:SetFontObject(dark and GameFontHighlight or GameFontDisable)
+	look.opacityValue:SetFontObject(dark and GameFontNormal or GameFontDisable)
+	look.syncing = true
+	opacity:SetValue(math.floor((tonumber(s.darkAlpha) or 0.92) * 100 + 0.5))
+	look.syncing = false
+end
+
+opacity:SetScript("OnValueChanged", function(self, value)
+	-- The saved value is shown as it is (the default 92 is between steps); a drag moves in steps of 5.
+	if look.syncing then look.opacityValue:SetText(math.floor((value or 0) + 0.5) .. "%") return end
+	value = math.floor((value or 0) / 5 + 0.5) * 5
+	look.opacityValue:SetText(value .. "%")
+	if not ns.db then return end
+	ns.db.settings.darkAlpha = value / 100
+	if ns.Styles then ns.Styles.SetDarkAlpha(ns.db.settings.darkAlpha) end
+end)
+opacity:SetScript("OnEnter", function(self)
+	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+	GameTooltip:SetText("Dark background opacity", 1, 1, 1)
+	GameTooltip:AddLine("How much of the world shows through the Dark style's windows.", nil, nil, nil, true)
+	if not (ns.db and ns.db.settings.style == "dark") then GameTooltip:AddLine("Applies to the Dark style only.", 1, 0.82, 0, true) end
+	GameTooltip:Show()
+end)
+opacity:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+look.styleButton:SetScript("OnClick", function(_, button)
+	if ns.Styles then ns.Styles.Cycle(button == "RightButton" and -1 or 1) end
+	UI:ShowLook()
+end)
+look.styleButton:SetScript("OnEnter", function(self)
+	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+	GameTooltip:SetText("Window style", 1, 1, 1)
+	for _, line in ipairs(ns.Styles and ns.Styles.HELP or {}) do GameTooltip:AddLine(line, nil, nil, nil, true) end
+	GameTooltip:AddLine("Left-click for the next style, right-click for the previous one.", 0.6, 0.6, 0.6, true)
+	GameTooltip:Show()
+end)
+look.styleButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+look:SetScript("OnShow", function() UI:ShowLook() end)
+lookButton:SetScript("OnClick", function() look:SetShown(not look:IsShown()) end)
+lookButton:SetScript("OnEnter", function(self)
+	ShowTextTooltip(self, "Look", "The window style: Blizzard, Dark, or EllesmereUI's look when it is installed.")
+end)
+lookButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+frame:HookScript("OnHide", function() look:Hide() end)
+
+-- Everything the skin file restyles.
+UI.parts = {
+	frame = frame, body = body, search = search, addLabel = addLabel, addBox = addBox, addButton = addButton,
+	header = header, headerButtons = headerButtons, scroll = scroll, emptyText = emptyText, rows = rows,
+	footer = footer, countText = countText, toggles = toggles, reserveBoxes = { reserveGold, reserveSilver },
+	nowButton = nowButton, lookButton = lookButton, look = look, hasBand = hasBand,
+}
+
 -- ------------------------------------------------------------------
 -- Refresh
 -- ------------------------------------------------------------------
@@ -788,6 +923,7 @@ function UI:Refresh()
 		row.check:SetChecked(entry.cfg.enabled)
 		row.icon:SetTexture(entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
 		SetIconBorder(row.iconBorder, entry.quality)
+		if ns.SkinRowQuality then ns.SkinRowQuality(row, entry.quality) end
 		row.name:SetText(entry.name)
 		if entry.loaded then
 			row.name:SetTextColor(ns.GetQualityColor(entry.quality))
@@ -862,6 +998,7 @@ local function AttachButton(parentName, key, onClick)
 	b:SetScript("OnLeave", function() GameTooltip:Hide() end)
 	b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 	UI[key] = b
+	if ns.SkinAttached then ns.SkinAttached(b) end
 end
 
 function UI:OnMerchantShow()
@@ -913,6 +1050,9 @@ mmBorder:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
 local function MinimapPosition()
 	local angle = math.rad(ns.db.settings.minimapAngle or 220)
 	local radius = (Minimap:GetWidth() / 2) + 6
+	-- Only while it sits on the minimap. A button collector (EllesmereUI's, for one) that
+	-- has taken the button keeps it where it put it.
+	if mm:GetParent() ~= Minimap then return end
 	mm:ClearAllPoints()
 	mm:SetPoint("CENTER", Minimap, "CENTER", math.cos(angle) * radius, math.sin(angle) * radius)
 end

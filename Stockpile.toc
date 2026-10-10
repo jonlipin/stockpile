@@ -2,11 +2,14 @@
 ## Title: Stockpile
 ## Notes: Keep your bags topped up from vendors and the bank. Drag items in, set how many you want.|n|cff00ccff/stockpile|r to open.
 ## Author: Jon
-## Version: 1.0.5
+## Version: 1.1.0
 ## LoadSavedVariablesFirst: 1
 ## SavedVariablesPerCharacter: StockpileDB
+## OptionalDeps: EllesmereUI
 ## IconTexture: Interface\Icons\INV_Misc_Bag_10
 
 Stockpile.xml
 Core.lua
 UI.lua
+Styles.lua
+Stockpile_Skins.lua

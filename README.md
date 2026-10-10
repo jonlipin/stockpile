@@ -12,7 +12,7 @@ Built for **WoW: Forever** (Interface 16001).
 
 **One simple list**
 - Drag any item from your bags onto the window to add it
-- Item icon with quality border, quality-coloured name and the full tooltip on hover
+- Item icon with quality border, quality-colored name and the full tooltip on hover
 - Search box and click-to-sort columns
 - *Have* and *In bank* counts at a glance: red when you're short, green when you're stocked
 
@@ -35,6 +35,7 @@ Built for **WoW: Forever** (Interface 16001).
 - Minimap button: left-click to open, right-click to restock now
 - Untick an item to keep it on the list without restocking it
 - Each character keeps its own list
+- Three window styles: Blizzard, a built-in Dark style, or EllesmereUI's look when it is installed
 
 ## Good to know
 
@@ -84,9 +85,10 @@ Please include the output of `/stockpile debug`. For anything bank-related, turn
 - **Have**: how many are in your bags. Red = below Want, green = at or above.
 - **In bank**: how many are in your bank (updates when you open it).
 - **Vendor / Bank / Guild**: where that item may come from.
-- **Bank extras**: deposit the surplus. Only active when Bank or Guild is ticked, so it's greyed out on vendor-only items.
+- **Bank extras**: deposit the surplus. Only active when Bank or Guild is ticked, so it's grayed out on vendor-only items.
 - Click any **column header** to sort; click again to reverse.
 - The **X** at the end of a row removes the item.
+- **Look** (top right): the window style. Automatic uses EllesmereUI's look when it is installed and Blizzard's otherwise; Blizzard is the game's own art; Dark is a flat dark style built in, with a slider for how much of the world shows through. Switching away from a style that is already drawn takes a reload, and Stockpile offers one.
 
 **Footer**
 - **Auto vendor / Auto bank / Auto guild**: run automatically when that window opens.
@@ -103,6 +105,7 @@ Please include the output of `/stockpile debug`. For anything bank-related, turn
 | `/stockpile bank` | Restock from the open bank |
 | `/stockpile guild` | Restock from the open guild bank |
 | `/stockpile minimap` | Show / hide the minimap button |
+| `/stockpile style` | Next window style; add `auto`, `blizzard` or `dark` to pick one |
 | `/stockpile trace` | Print every bank move (troubleshooting) |
 | `/stockpile debug` | Diagnostic report for bug reports |
 
