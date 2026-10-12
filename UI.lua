@@ -82,9 +82,19 @@ local ICON_BORDER_ATLAS = {
 	[2] = "auctionhouse-itemicon-border-green",  [3] = "auctionhouse-itemicon-border-blue",
 	[4] = "auctionhouse-itemicon-border-purple", [5] = "auctionhouse-itemicon-border-orange",
 }
+-- The white ring can't be asked for by name on Forever: its atlas shares an element with
+-- profession-ring-frame-c60, and the client draws that one instead (three dark squares over the
+-- icon). So the white ring is cut straight from the auction house sheet, at its own place there.
+local AH_SHEET = 3046538 -- auctionhouse-itemicon-border-*, 1024x1024
+local WHITE_RING = { 139 / 1024, 275 / 1024, 715 / 1024, 851 / 1024 }
 local function SetIconBorder(tex, quality)
 	local atlas = ICON_BORDER_ATLAS[quality or 1] or ICON_BORDER_ATLAS[1]
-	if HasAtlas(atlas) then
+	if atlas == ICON_BORDER_ATLAS[1] and HasAtlas(atlas) then
+		tex:SetTexture(AH_SHEET)
+		tex:SetTexCoord(WHITE_RING[1], WHITE_RING[2], WHITE_RING[3], WHITE_RING[4])
+		tex:Show()
+		ns.templateReport["atlas:auctionhouse-itemicon-border"] = "ok"
+	elseif HasAtlas(atlas) then
 		tex:SetAtlas(atlas)
 		tex:Show()
 		ns.templateReport["atlas:auctionhouse-itemicon-border"] = "ok"
